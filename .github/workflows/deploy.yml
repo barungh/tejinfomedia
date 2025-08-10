@@ -1,0 +1,57 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - main # This workflow runs ONLY when you push to the main branch
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Angular SSR app
+        run: npm run build
+
+      - name: Deploy to Server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          # CORRECTED: The source path from your angular.json
+          source: "dist/tejinfomedia/"
+          # Deploy to a temporary directory first for safety
+          target: "/var/www/tejinfomedia.com-new"
+          strip_components: 2 # This removes 'dist/tejinfomedia' from the path when copying
+
+      - name: Activate New Release and Restart
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Remove old release and move the new one into place
+            sudo rm -rf /var/www/tejinfomedia.com
+            sudo mv /var/www/tejinfomedia.com-new /var/www/tejinfomedia.com
+            # Go to the new directory
+            cd /var/www/tejinfomedia.com
+            # Copy your package.json to the deployed folder so we can install dependencies
+            sudo cp ${{ github.workspace }}/package.json .
+            sudo cp ${{ github.workspace }}/package-lock.json .
+            # Install ONLY production dependencies (like express)
+            sudo npm install --production
+            # Restart the service using systemd
+            sudo systemctl restart tejinfomedia
