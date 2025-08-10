@@ -3,7 +3,8 @@ name: Deploy to DigitalOcean
 on:
   push:
     branches:
-      - main # This workflow runs ONLY when you push to the main branch
+      - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -23,6 +24,11 @@ jobs:
       - name: Build Angular SSR app
         run: npm run build
 
+      # --- NEW STEP ADDED HERE ---
+      - name: Prepare deployment artifacts
+        # Copy the package files into the build output so they get deployed.
+        run: cp package.json package-lock.json dist/tejinfomedia/
+
       - name: Deploy to Server
         uses: appleboy/scp-action@master
         with:
@@ -30,11 +36,9 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          # CORRECTED: The source path from your angular.json
           source: "dist/tejinfomedia/"
-          # Deploy to a temporary directory first for safety
           target: "/var/www/tejinfomedia.com-new"
-          strip_components: 2 # This removes 'dist/tejinfomedia' from the path when copying
+          strip_components: 2
 
       - name: Activate New Release and Restart
         uses: appleboy/ssh-action@master
@@ -43,15 +47,9 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Remove old release and move the new one into place
             sudo rm -rf /var/www/tejinfomedia.com
             sudo mv /var/www/tejinfomedia.com-new /var/www/tejinfomedia.com
-            # Go to the new directory
             cd /var/www/tejinfomedia.com
-            # Copy your package.json to the deployed folder so we can install dependencies
-            sudo cp ${{ github.workspace }}/package.json .
-            sudo cp ${{ github.workspace }}/package-lock.json .
-            # Install ONLY production dependencies (like express)
+            # The 'cp' commands are no longer needed here because the files are already in place.
             sudo npm install --production
-            # Restart the service using systemd
             sudo systemctl restart tejinfomedia
